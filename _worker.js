@@ -1,10 +1,10 @@
 /**
- * Cloudflare Worker: RenewHelper (v1.3.1)
+ * Cloudflare Worker: RenewHelper (v1.3.2)
  * Author: LOSTFREE
  * Features: Multi-Channel Notify, Import/Export, Channel Test, Bilingual UI, Precise ICS Alarm
  */
 
-const APP_VERSION = "v1.3.1";
+const APP_VERSION = "v1.3.2";
 
 // ==========================================
 // 1. Core Logic (Lunar & Calc)
@@ -1863,7 +1863,7 @@ const HTML = `<!DOCTYPE html>
             <el-dialog v-model="dialogVisible" :title="isEdit?t('editService'):t('newService')" width="680px" align-center class="!rounded-none mecha-panel" style="clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);">
                 <el-form :model="form" label-position="top">
                     <el-form-item :label="t('formName')"><el-input v-model="form.name" size="large"><template #prefix><el-icon><Monitor/></el-icon></template></el-input></el-form-item>
-                    <el-form-item :label="t('tags')"><el-select v-model="form.tags" multiple filterable allow-create default-first-option :placeholder="t('tagPlaceholder')" style="width:100%" size="large"><el-option v-for="tag in allTags" :key="tag" :label="tag" :value="tag"></el-option></el-select></el-form-item>
+                    <el-form-item :label="t('tags')"><el-select v-model="form.tags" multiple filterable allow-create default-first-option :reserve-keyword="false" :placeholder="t('tagPlaceholder')" style="width:100%" size="large"><el-option v-for="tag in allTags" :key="tag" :label="tag" :value="tag"></el-option></el-select></el-form-item>
 
                     <div class="flex flex-col sm:flex-row items-end gap-4 mb-4">
                         <el-form-item :label="t('formType')" class="!mb-0 flex-1 w-full"><div class="radio-group-fix"><div class="radio-item" :class="{active:form.type==='cycle'}" @click="form.type='cycle'">📅 {{ t('cycle') }}</div><div class="radio-item" :class="{active:form.type==='reset'}" @click="form.type='reset'">⏳ {{ t('reset') }}</div></div></el-form-item>
@@ -2467,4 +2467,3 @@ const HTML = `<!DOCTYPE html>
     </script>
 </body>
 </html>`;
-
