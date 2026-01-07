@@ -22,9 +22,12 @@
  * added: add filter logic v2.0.7
  * added: add spending stats v2.0.8
  * modified: fix spending stats logic v2.0.9
+ * added: add avg monthly label v2.0.10
+ * added: add monthly breakdown v2.0.11
+ * modified: fix spending stats logic v2.0.12
  */
 
-const APP_VERSION = "v2.0.9";
+const APP_VERSION = "v2.0.12";
 //接入免费汇率API
 const EXCHANGE_RATE_API_URL = 'https://api.frankfurter.dev/v1/latest?base=';
 // ==========================================
@@ -1826,11 +1829,11 @@ const HTML = `<!DOCTYPE html>
                     </div>
                     <div class="mecha-panel p-6 pl-8 border-l-4 !border-l-purple-500">
                         <div class="text-purple-600 text-xs font-bold font-mono mb-2 tracking-widest">{{ t('viewSwitch') }}</div>
-                        <div class="mt-3 inline-flex bg-gray-200 dark:bg-slate-800 rounded-lg p-1 border border-gray-300 dark:border-slate-700">
-                            <button @click="currentView = 'project'" :class="['px-4 py-2 rounded text-xs font-mono font-bold transition-all', currentView === 'project' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white']">
+                        <div class="mt-3 flex w-full bg-gray-200 dark:bg-slate-800 rounded-lg p-1 border border-gray-300 dark:border-slate-700">
+                            <button @click="currentView = 'project'" :class="['flex-1 px-4 py-2 rounded text-xs font-mono font-bold transition-all text-center justify-center', currentView === 'project' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white']">
                                 {{ t('viewProjects') }}
                             </button>
-                            <button @click="currentView = 'spending'" :class="['px-4 py-2 rounded text-xs font-mono font-bold transition-all', currentView === 'spending' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white']">
+                            <button @click="currentView = 'spending'" :class="['flex-1 px-4 py-2 rounded text-xs font-mono font-bold transition-all text-center justify-center', currentView === 'spending' ? 'bg-purple-600 text-white shadow-lg' : 'text-gray-500 dark:text-gray-400 hover:text-black dark:hover:text-white']">
                                 {{ t('viewSpending') }}
                             </button>
                         </div>
@@ -2018,116 +2021,177 @@ const HTML = `<!DOCTYPE html>
                         </div>
 
                         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                             <!-- LEFT PANEL: Monthly Trend Chart -->
-                             <div class="lg:col-span-8 mecha-panel p-6 border-l-4 transition-colors duration-500 animate-slide-in" 
-                                  :class="spendingMode==='bill' ? '!border-l-cyan-500' : '!border-l-purple-500'"
-                                  style="animation-delay: 0.1s">
-                                 
-                                 <div class="flex justify-between items-center mb-6">
-                                     <div class="text-xs font-bold font-mono tracking-widest uppercase transition-colors duration-300"
-                                          :class="spendingMode==='bill' ? 'text-cyan-600' : 'text-purple-600'">
-                                          {{ t('monthlyTrend') }} <span class="opacity-50">({{ spendingMode==='bill' ? '12M' : '12M' }})</span>
+                             <!-- LEFT PANEL: Monthly Trend Chart & Item Details -->
+                             <div class="lg:col-span-8 flex flex-col space-y-6">
+                                 <!-- 1. Monthly Trend Chart Panel -->
+                                 <div class="mecha-panel p-6 border-l-4 transition-colors duration-500 animate-slide-in flex-1" 
+                                      :class="spendingMode==='bill' ? '!border-l-cyan-500' : '!border-l-purple-500'"
+                                      style="animation-delay: 0.1s; min-height: 380px;">
+                                     
+                                     <div class="flex justify-between items-center mb-6">
+                                         <div class="text-xs font-bold font-mono tracking-widest uppercase transition-colors duration-300"
+                                              :class="spendingMode==='bill' ? 'text-cyan-600' : 'text-purple-600'">
+                                              {{ t('monthlyTrend') }} <span class="opacity-50">({{ spendingMode==='bill' ? '12M' : '12M' }})</span>
+                                         </div>
                                      </div>
-                                 </div>
 
-                                 <!-- Chart Container -->
-                                 <div class="relative h-80 pl-12 pr-4 pt-8 select-none">
-                                     <!-- Y-axis labels -->
-                                     <div class="absolute left-0 top-8 bottom-8 flex flex-col justify-between text-[10px] font-mono text-gray-400 pr-2 w-10 text-right">
-                                         <span>{{ Math.max(...spendingStats[spendingMode].trends.map(m => parseFloat(m.val)), 0).toFixed(0) }}</span>
-                                         <span>0</span>
+                                     <!-- Chart Container (Restored height to h-52) -->
+                                     <div class="relative h-52 pl-12 pr-4 pt-6 select-none">
+                                         <!-- Y-axis labels -->
+                                         <div class="absolute left-0 top-8 bottom-8 flex flex-col justify-between text-[10px] font-mono text-gray-400 pr-2 w-10 text-right">
+                                             <span>{{ Math.max(...spendingStats[spendingMode].trends.map(m => parseFloat(m.val)), 0).toFixed(0) }}</span>
+                                             <span>0</span>
+                                         </div>
+                                         
+                                         <div class="h-full relative chart-container" @mouseleave="hoverIndex = -1">
+                                             <!-- 1. Bars Layer (HTML for perfect aspect ratio) -->
+                                             <div class="absolute inset-0">
+                                                 <div v-for="(item, idx) in spendingStats[spendingMode].trends" :key="spendingMode+'-bar-'+idx"
+                                                      class="absolute h-full flex items-end justify-center cursor-pointer"
+                                                      :style="{ left: ((idx / 12) * 100) + '%', width: (100/12) + '%' }"
+                                                      @mouseenter="hoverIndex = idx"
+                                                      @click="selectedMonth = selectedMonth === item.month ? null : item.month">
+                                                     
+                                                      <div class="w-[70%] rounded-t transition-all duration-300 relative bar-animate"
+                                                          :class="selectedMonth === item.month ? 'ring-2 ring-offset-1 ring-offset-transparent ' + (spendingMode==='bill' ? 'ring-cyan-300' : 'ring-purple-300') : ''"
+                                                          :style="{ 
+                                                              height: item.pct + '%', 
+                                                              opacity: selectedMonth === item.month ? 1 : ((hoverIndex === -1 || hoverIndex === idx) ? 1 : 0.3),
+                                                              animationDelay: (idx * 0.05) + 's' 
+                                                          }">
+                                                          <!-- Gradient Background -->
+                                                          <div class="absolute inset-0 rounded-t"
+                                                               :class="spendingMode==='bill' ? 'bg-gradient-to-t from-cyan-400 to-cyan-600' : 'bg-gradient-to-t from-purple-400 to-purple-600'"
+                                                               :style="{ opacity: selectedMonth === item.month ? 1 : 0.8 }"></div>
+                                                          <!-- Selected/Hover Highlight Line -->
+                                                          <div v-if="hoverIndex === idx || selectedMonth === item.month" class="absolute top-0 left-0 right-0 h-[2px] bg-white shadow-glow"></div>
+                                                      </div>
+                                                 </div>
+                                             </div>
+
+                                             <!-- 2. Line Layer (SVG for path) -->
+                                             <svg :key="spendingMode+'-line'" class="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                                 <!-- Average Line (Dashed) -->
+                                                 <line v-if="spendingStats[spendingMode].avgPct > 0"
+                                                     x1="0" 
+                                                     :y1="100 - spendingStats[spendingMode].avgPct" 
+                                                     x2="100" 
+                                                     :y2="100 - spendingStats[spendingMode].avgPct"
+                                                     :stroke="spendingMode==='bill' ? '#22d3ee' : '#a78bfa'"
+                                                     stroke-width="1.5"
+                                                     stroke-dasharray="4 3"
+                                                     vector-effect="non-scaling-stroke"
+                                                     opacity="0.7"
+                                                 />
+                                                 <polyline 
+                                                     fill="none" 
+                                                     :stroke="spendingMode==='bill' ? '#67e8f9' : '#c4b5fd'"
+                                                     stroke-width="2"
+                                                     stroke-linecap="round"
+                                                     stroke-linejoin="round"
+                                                     vector-effect="non-scaling-stroke"
+                                                     class="draw-line-animate"
+                                                     :points="spendingStats[spendingMode].trends.map((item, idx) => {
+                                                         const x = ((idx + 0.5) / 12) * 100;
+                                                         const y = 100 - item.pct;
+                                                         return x + ',' + y;
+                                                     }).join(' ')"
+                                                 />
+                                             </svg>
+
+                                             <!-- Average Value Label (Above Dashed Line) -->
+                                             <div v-if="spendingStats[spendingMode].avgPct > 0"
+                                                  class="absolute left-2 pointer-events-none text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-900/70 dark:bg-slate-800/90 backdrop-blur-sm border transition-colors duration-300"
+                                                  :class="spendingMode==='bill' ? 'text-cyan-400 border-cyan-500/30' : 'text-purple-400 border-purple-500/30'"
+                                                  :style="{ top: 'calc(' + (100 - spendingStats[spendingMode].avgPct) + '% - 22px)' }">
+                                                 {{ t('avgMonthlyLabel') }}: {{ spendingStats[spendingMode].avgVal.toFixed(2) }} {{ settings.defaultCurrency || 'CNY' }}
+                                             </div>
+
+                                             <!-- 3. Dots Layer (HTML for non-distorted dots) -->
+                                             <div class="absolute inset-0 pointer-events-none">
+                                                 <div v-for="(item, idx) in spendingStats[spendingMode].trends" :key="spendingMode+'-dot-'+idx"
+                                                      class="absolute w-3 h-3 rounded-full border-2 transition-transform duration-300 fade-in-animate"
+                                                      :class="[
+                                                          item.isCurrent ? 'bg-white border-amber-500 scale-125 z-10' : (spendingMode==='bill' ? 'bg-cyan-500 border-cyan-200' : 'bg-purple-500 border-purple-200'),
+                                                          hoverIndex === idx ? 'scale-150' : ''
+                                                      ]"
+                                                      :style="{ 
+                                                          left: 'calc(' + ((idx + 0.5) / 12) * 100 + '% - 6px)', 
+                                                          top: 'calc(' + (100 - item.pct) + '% - 6px)',
+                                                          animationDelay: (0.8 + idx * 0.05) + 's' 
+                                                      }">
+                                                 </div>
+                                             </div>
+
+                                             <!-- Tooltip -->
+                                             <div v-if="hoverIndex !== -1" 
+                                                  class="absolute z-20 pointer-events-none transform -translate-x-1/2 transition-all duration-75"
+                                                  :style="{ 
+                                                      left: ((hoverIndex + 0.5) / 12) * 100 + '%', 
+                                                      top: Math.max(0, 100 - spendingStats[spendingMode].trends[hoverIndex].pct - 20) + '%' 
+                                                  }">
+                                                 <div class="bg-slate-900/95 backdrop-blur border border-slate-600 text-white text-xs rounded p-3 shadow-2xl whitespace-nowrap min-w-[120px]">
+                                                     <div class="font-bold text-[10px] text-slate-400 mb-2 uppercase">{{ spendingStats[spendingMode].trends[hoverIndex].month }}</div>
+                                                     <div class="flex justify-between items-end mb-1">
+                                                         <span class="text-[10px] text-slate-400">{{ t('total') }}</span>
+                                                         <span class="font-mono font-bold text-sm">{{ spendingStats[spendingMode].trends[hoverIndex].total }} <span class="text-[10px] opacity-70">{{ settings.defaultCurrency || 'CNY' }}</span></span>
+                                                     </div>
+                                                     <div class="flex justify-between items-center mb-1">
+                                                         <span class="text-[10px] text-slate-400">{{ t('count') }}</span>
+                                                         <span class="font-mono font-bold text-[11px]">{{ spendingStats[spendingMode].trends[hoverIndex].count }}</span>
+                                                     </div>
+                                                     <div class="flex justify-between items-center border-t border-slate-700 pt-1 mt-1">
+                                                         <span class="text-[9px] text-slate-500">{{ t('growth') }}</span>
+                                                         <span :class="['font-mono text-[10px] font-bold', parseFloat(spendingStats[spendingMode].trends[hoverIndex].growth) > 0 ? 'text-red-400' : (parseFloat(spendingStats[spendingMode].trends[hoverIndex].growth) < 0 ? 'text-green-400' : 'text-gray-400')]">
+                                                             {{ parseFloat(spendingStats[spendingMode].trends[hoverIndex].growth) > 0 ? '+' : '' }}{{ spendingStats[spendingMode].trends[hoverIndex].growth }}%
+                                                         </span>
+                                                     </div>
+                                                 </div>
+                                             </div>
+                                         </div>
                                      </div>
                                      
-                                     <div class="h-full relative chart-container" @mouseleave="hoverIndex = -1">
-                                         <!-- 1. Bars Layer (HTML for perfect aspect ratio) -->
-                                         <div class="absolute inset-0">
-                                             <div v-for="(item, idx) in spendingStats[spendingMode].trends" :key="spendingMode+'-bar-'+idx"
-                                                  class="absolute h-full flex items-end justify-center"
-                                                  :style="{ left: ((idx / 12) * 100) + '%', width: (100/12) + '%' }"
-                                                  @mouseenter="hoverIndex = idx">
-                                                 
-                                                  <div class="w-[70%] rounded-t transition-all duration-300 relative bar-animate"
-                                                      :style="{ 
-                                                          height: item.pct + '%', 
-                                                          opacity: (hoverIndex === -1 || hoverIndex === idx) ? 1 : 0.3,
-                                                          animationDelay: (idx * 0.05) + 's' 
-                                                      }">
-                                                      <!-- Gradient Background -->
-                                                      <div class="absolute inset-0 rounded-t opacity-80"
-                                                           :class="spendingMode==='bill' ? 'bg-gradient-to-t from-cyan-400 to-cyan-600' : 'bg-gradient-to-t from-purple-400 to-purple-600'"></div>
-                                                      <!-- Hover Highlight Line -->
-                                                      <div v-if="hoverIndex === idx" class="absolute top-0 left-0 right-0 h-[2px] bg-white shadow-glow"></div>
-                                                  </div>
-                                             </div>
-                                         </div>
-
-                                         <!-- 2. Line Layer (SVG for path) -->
-                                         <svg :key="spendingMode+'-line'" class="absolute inset-0 w-full h-full pointer-events-none overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                             <polyline 
-                                                 fill="none" 
-                                                 :stroke="spendingMode==='bill' ? '#67e8f9' : '#c4b5fd'"
-                                                 stroke-width="2"
-                                                 stroke-linecap="round"
-                                                 stroke-linejoin="round"
-                                                 vector-effect="non-scaling-stroke"
-                                                 class="draw-line-animate"
-                                                 :points="spendingStats[spendingMode].trends.map((item, idx) => {
-                                                     const x = ((idx + 0.5) / 12) * 100;
-                                                     const y = 100 - item.pct;
-                                                     return x + ',' + y;
-                                                 }).join(' ')"
-                                             />
-                                         </svg>
-
-                                         <!-- 3. Dots Layer (HTML for non-distorted dots) -->
-                                         <div class="absolute inset-0 pointer-events-none">
-                                             <div v-for="(item, idx) in spendingStats[spendingMode].trends" :key="spendingMode+'-dot-'+idx"
-                                                  class="absolute w-3 h-3 rounded-full border-2 transition-transform duration-300 fade-in-animate"
-                                                  :class="[
-                                                      item.isCurrent ? 'bg-white border-amber-500 scale-125 z-10' : (spendingMode==='bill' ? 'bg-cyan-500 border-cyan-200' : 'bg-purple-500 border-purple-200'),
-                                                      hoverIndex === idx ? 'scale-150' : ''
-                                                  ]"
-                                                  :style="{ 
-                                                      left: 'calc(' + ((idx + 0.5) / 12) * 100 + '% - 6px)', 
-                                                      top: 'calc(' + (100 - item.pct) + '% - 6px)',
-                                                      animationDelay: (0.8 + idx * 0.05) + 's' 
-                                                  }">
-                                             </div>
-                                         </div>
-
-                                         <!-- Tooltip -->
-                                         <div v-if="hoverIndex !== -1" 
-                                              class="absolute z-20 pointer-events-none transform -translate-x-1/2 transition-all duration-75"
-                                              :style="{ 
-                                                  left: ((hoverIndex + 0.5) / 12) * 100 + '%', 
-                                                  top: Math.max(0, 100 - spendingStats[spendingMode].trends[hoverIndex].pct - 20) + '%' 
-                                              }">
-                                             <div class="bg-slate-900/95 backdrop-blur border border-slate-600 text-white text-xs rounded p-3 shadow-2xl whitespace-nowrap min-w-[120px]">
-                                                 <div class="font-bold text-[10px] text-slate-400 mb-2 uppercase">{{ spendingStats[spendingMode].trends[hoverIndex].month }}</div>
-                                                 <div class="flex justify-between items-end mb-1">
-                                                     <span class="text-[10px] text-slate-400">{{ t('total') }}</span>
-                                                     <span class="font-mono font-bold text-sm">{{ spendingStats[spendingMode].trends[hoverIndex].total }}</span>
-                                                 </div>
-                                                 <div class="flex justify-between items-center border-t border-slate-700 pt-1 mt-1">
-                                                     <span class="text-[9px] text-slate-500">{{ t('growth') }}</span>
-                                                     <span :class="['font-mono text-[10px] font-bold', parseFloat(spendingStats[spendingMode].trends[hoverIndex].growth) > 0 ? 'text-red-400' : (parseFloat(spendingStats[spendingMode].trends[hoverIndex].growth) < 0 ? 'text-green-400' : 'text-gray-400')]">
-                                                         {{ parseFloat(spendingStats[spendingMode].trends[hoverIndex].growth) > 0 ? '+' : '' }}{{ spendingStats[spendingMode].trends[hoverIndex].growth }}%
-                                                     </span>
-                                                 </div>
+                                     <!-- X-Axis Labels -->
+                                     <div class="ml-12 mr-4 flex justify-between mt-2">
+                                         <div v-for="(item, idx) in spendingStats[spendingMode].trends" :key="'l-'+item.month" 
+                                              class="flex-1 text-center" @mouseenter="hoverIndex = idx">
+                                             <div :class="['text-[9px] font-mono mt-1 transition-colors', 
+                                                 item.isCurrent ? 'text-amber-500 font-bold' : 'text-gray-400',
+                                                 hoverIndex === idx ? 'text-blue-500 font-bold' : '']">
+                                                 {{ item.month.slice(5) }}
                                              </div>
                                          </div>
                                      </div>
                                  </div>
                                  
-                                 <!-- X-Axis Labels -->
-                                 <div class="ml-12 mr-4 flex justify-between mt-2">
-                                     <div v-for="(item, idx) in spendingStats[spendingMode].trends" :key="'l-'+item.month" 
-                                          class="flex-1 text-center" @mouseenter="hoverIndex = idx">
-                                         <div :class="['text-[9px] font-mono mt-1 transition-colors', 
-                                             item.isCurrent ? 'text-amber-500 font-bold' : 'text-gray-400',
-                                             hoverIndex === idx ? 'text-blue-500 font-bold' : '']">
-                                             {{ item.month.slice(5) }}
+                                <!-- 2. Month Detail Card -->
+                                <div class="mecha-panel p-4 border-t-4 transition-all duration-300 animate-slide-in flex-1"
+                                      :class="spendingMode==='bill' ? '!border-t-cyan-500' : '!border-t-purple-500'"
+                                      style="min-height: 280px;">
+                                     <div class="flex justify-between items-center mb-3">
+                                         <div class="text-xs font-bold font-mono tracking-widest uppercase transition-colors"
+                                              :class="spendingMode==='bill' ? 'text-cyan-500' : 'text-purple-500'">
+                                             {{ selectedMonth || '-' }} {{ t('itemDetails') }}
                                          </div>
+                                         <div class="text-xs font-mono text-gray-400">{{ monthDetails.length }} {{ t('count') }}</div>
+                                     </div>
+                                     <div class="overflow-y-auto custom-scrollbar space-y-1" style="max-height: 280px;">
+                                         <div v-if="monthDetails.length === 0" class="h-full flex items-center justify-center text-gray-400 dark:text-gray-500 text-sm font-mono">
+                                             {{ t('noData') }}
+                                         </div>
+                                      <div v-else v-for="(item, idx) in monthDetails" :key="'md-'+idx"
+                                          class="flex justify-between items-center p-2 rounded bg-gray-50 dark:bg-slate-800/50 text-sm mb-1">
+                                          <div class="flex flex-col overflow-hidden mr-2">
+                                              <div class="flex items-center gap-2">
+                                                  <span class="font-mono truncate font-bold text-slate-700 dark:text-slate-300">{{ item.name }}</span>
+                                                  <span v-if="item.isProjected" class="text-[9px] px-1 rounded bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300">{{ t('predictedTag') }}</span>
+                                              </div>
+                                              <div class="text-[10px] text-gray-400 font-mono truncate">{{ item.period }}</div>
+                                          </div>
+                                          <span class="font-mono font-bold whitespace-nowrap" :class="spendingMode==='bill' ? 'text-cyan-500' : 'text-purple-500'">
+                                              {{ item.amount }} <span class="text-[10px] opacity-70">{{ settings.defaultCurrency || 'CNY' }}</span>
+                                          </span>
+                                      </div>
                                      </div>
                                  </div>
                              </div>
@@ -2137,57 +2201,90 @@ const HTML = `<!DOCTYPE html>
                                  <!-- Annual Summary -->
                                  <div class="mecha-panel p-6 border-t-4 transition-colors duration-500 animate-slide-in" 
                                       :class="spendingMode==='bill' ? '!border-t-cyan-500' : '!border-t-purple-500'"
-                                      style="animation-delay: 0.2s">
+                                      style="animation-delay: 0.2s; min-height: 380px;">
                                      <div class="flex justify-between items-center mb-6">
                                          <div class="text-xs font-bold font-mono tracking-widest uppercase">{{ t('annualSummary') }}</div>
                                          <el-icon class="text-gray-400"><Promotion /></el-icon>
                                      </div>
                                      
-                                     <!-- Current Year Big Number -->
+                                     <!-- Selected Period Big Number -->
                                      <div class="mb-6">
-                                          <div class="text-[10px] text-gray-400 font-mono mb-1">{{ new Date().getFullYear() }} {{ t('total') }}</div>
+                                          <div class="text-[10px] text-gray-400 font-mono mb-1">{{ spendingStats[spendingMode].selectedInfo?.label === '12M' ? t('last12M') : spendingStats[spendingMode].selectedInfo?.label }} {{ t('total') }}</div>
                                           <div class="text-3xl font-bold font-mono tracking-tight" :class="spendingMode==='bill' ? 'text-cyan-500' : 'text-purple-500'">
-                                              {{ spendingStats[spendingMode].annual[2]?.total || '0' }}
+                                              {{ parseFloat(spendingStats[spendingMode].selectedInfo?.total || 0).toFixed(2) }} <span class="text-lg opacity-70">{{ settings.defaultCurrency || 'CNY' }}</span>
                                           </div>
                                      </div>
 
-                                     <!-- Annual Bars -->
-                                     <div class="grid grid-cols-3 gap-2 h-32 items-end">
-                                         <div v-for="y in spendingStats[spendingMode].annual" :key="'y-'+y.year" class="flex flex-col items-center gap-2 h-full justify-end group cursor-default">
-                                             <div class="text-[10px] font-mono font-bold opacity-0 group-hover:opacity-100 transition-opacity -mb-4 z-10 bg-slate-800 text-white px-1 rounded">{{ y.total }}</div>
-                                             <div class="w-full rounded-t transition-all duration-500 relative overflow-hidden"
-                                                  :class="spendingMode==='bill' ? 'bg-cyan-500/20 group-hover:bg-cyan-500/40' : 'bg-purple-500/20 group-hover:bg-purple-500/40'"
+                                     <!-- Annual Bars with 12M option -->
+                                     <div class="grid grid-cols-4 gap-2 h-52 items-end">
+                                         <!-- 3 Year Bars -->
+                                         <div v-for="y in spendingStats[spendingMode].annual" :key="'y-'+y.year" 
+                                              class="flex flex-col items-center gap-2 h-full justify-end group cursor-pointer transition-all"
+                                              @click="selectedYear = y.year">
+                                             <div class="text-[10px] font-mono font-bold transition-opacity -mb-4 z-10 bg-slate-800 text-white px-1 rounded"
+                                                  :class="selectedYear === y.year ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'">{{ parseFloat(y.total).toFixed(2) }} {{ settings.defaultCurrency || 'CNY' }}</div>
+                                             <div class="w-full rounded-t transition-all duration-300 relative overflow-hidden"
+                                                  :class="[
+                                                      selectedYear === y.year 
+                                                          ? (spendingMode==='bill' ? 'bg-cyan-500/60 ring-2 ring-cyan-400' : 'bg-purple-500/60 ring-2 ring-purple-400') 
+                                                          : (spendingMode==='bill' ? 'bg-cyan-500/20 hover:bg-cyan-500/40' : 'bg-purple-500/20 hover:bg-purple-500/40')
+                                                  ]"
                                                   :style="{ height: Math.max(y.pct, 5) + '%' }">
-                                                  <div class="absolute bottom-0 left-0 right-0 top-0 opacity-50"
+                                                  <div class="absolute bottom-0 left-0 right-0 top-0"
                                                        :class="spendingMode==='bill' ? 'bg-cyan-500' : 'bg-purple-500'"
-                                                       :style="{ height: y.pct + '%' }"></div>
+                                                       :style="{ opacity: selectedYear === y.year ? 0.8 : 0.5, height: '80%' }"></div>
                                              </div>
-                                             <div class="text-xs font-mono text-gray-500 font-bold">{{ y.year }}</div>
+                                             <div class="text-xs font-mono font-bold transition-colors"
+                                                  :class="selectedYear === y.year ? (spendingMode==='bill' ? 'text-cyan-400' : 'text-purple-400') : 'text-gray-500'">{{ y.year }}</div>
+                                         </div>
+                                         
+                                         <!-- 12M (Recent) Bar -->
+                                         <div class="flex flex-col items-center gap-2 h-full justify-end group cursor-pointer transition-all"
+                                              @click="selectedYear = 'recent'">
+                                             <div class="text-[10px] font-mono font-bold transition-opacity -mb-4 z-10 bg-slate-800 text-white px-1 rounded"
+                                                  :class="selectedYear === 'recent' ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'">{{ spendingStats[spendingMode].recentTotal?.toFixed(2) || '0.00' }} {{ settings.defaultCurrency || 'CNY' }}</div>
+                                             <div class="w-full rounded-t transition-all duration-300 relative overflow-hidden"
+                                                  :class="[
+                                                      selectedYear === 'recent' 
+                                                          ? (spendingMode==='bill' ? 'bg-amber-500/60 ring-2 ring-amber-400' : 'bg-amber-500/60 ring-2 ring-amber-400') 
+                                                          : (spendingMode==='bill' ? 'bg-amber-500/20 hover:bg-amber-500/40' : 'bg-amber-500/20 hover:bg-amber-500/40')
+                                                  ]"
+                                                  :style="{ height: Math.max(spendingStats[spendingMode].recentPct || 0, 5) + '%' }">
+                                                  <div class="absolute bottom-0 left-0 right-0 top-0 bg-amber-500"
+                                                       :style="{ opacity: selectedYear === 'recent' ? 0.8 : 0.5, height: '80%' }"></div>
+                                             </div>
+                                             <div class="text-xs font-mono font-bold transition-colors"
+                                                  :class="selectedYear === 'recent' ? 'text-amber-400' : 'text-gray-500'">{{ t('last12M') }}</div>
                                          </div>
                                      </div>
                                  </div>
 
                                  <!-- Monthly Breakdown List -->
-                                 <div class="mecha-panel p-0 overflow-hidden animate-slide-in" style="animation-delay: 0.3s">
+                                 <div class="mecha-panel p-0 overflow-hidden animate-slide-in" 
+                                      style="animation-delay: 0.3s; min-height: 280px;">
                                      <div class="p-4 border-b border-gray-100 dark:border-slate-800 bg-gray-50/50 dark:bg-slate-800/30">
                                          <div class="text-xs font-bold font-mono tracking-widest uppercase">{{ t('monthlyBreakdown') }}</div>
                                      </div>
-                                     <div class="h-[280px] overflow-y-auto custom-scrollbar p-2">
+                                     <div class="overflow-y-auto custom-scrollbar p-2" style="max-height: 280px;">
                                          <div v-for="m in spendingStats[spendingMode].trends.slice().reverse()" :key="'mb-'+m.month"
-                                              class="flex items-center justify-between p-3 mb-1 rounded hover:bg-gray-100 dark:hover:bg-slate-700/50 transition-colors group">
+                                              class="flex items-center justify-between p-3 mb-1 rounded transition-colors group cursor-pointer"
+                                              :class="selectedMonth === m.month ? (spendingMode==='bill' ? 'bg-cyan-500/20 ring-1 ring-cyan-500/50' : 'bg-purple-500/20 ring-1 ring-purple-500/50') : 'hover:bg-gray-100 dark:hover:bg-slate-700/50'"
+                                              @click="selectedMonth = selectedMonth === m.month ? null : m.month">
                                               
                                               <div class="flex items-center gap-3">
                                                   <div class="w-1.5 h-8 rounded-full transition-colors"
-                                                       :class="[m.isCurrent ? (spendingMode==='bill' ? 'bg-cyan-500' : 'bg-purple-500') : 'bg-gray-200 dark:bg-slate-700', 
-                                                                'group-hover:' + (spendingMode==='bill' ? 'bg-cyan-400' : 'bg-purple-400')]"></div>
+                                                       :class="[
+                                                           selectedMonth === m.month ? (spendingMode==='bill' ? 'bg-cyan-400' : 'bg-purple-400') :
+                                                           (m.isCurrent ? (spendingMode==='bill' ? 'bg-cyan-500' : 'bg-purple-500') : 'bg-gray-200 dark:bg-slate-700')
+                                                       ]"></div>
                                                   <div>
                                                       <div class="text-xs font-bold font-mono">{{ m.month }}</div>
-                                                      <div class="text-[10px] text-gray-400" v-if="m.isCurrent">{{ t('currMonth') }}</div>
+                                                      <div class="text-xs text-gray-400" v-if="m.isCurrent">{{ t('currMonth') }}</div>
                                                   </div>
                                               </div>
 
                                               <div class="text-right">
-                                                  <div class="font-mono font-bold text-sm">{{ m.total }}</div>
+                                                  <div class="font-mono font-bold text-sm">{{ m.total }} <span class="text-[10px] opacity-70">{{ settings.defaultCurrency || 'CNY' }}</span></div>
                                                   <div class="text-[10px] font-mono mt-0.5" 
                                                        v-if="m.val > 0 || m.prevVal > 0"
                                                        :class="parseFloat(m.growth) > 0 ? 'text-red-500' : (parseFloat(m.growth) < 0 ? 'text-green-500' : 'text-gray-500')">
@@ -2246,7 +2343,7 @@ const HTML = `<!DOCTYPE html>
 
                 <div class="mt-8 py-6 text-center border-t border-slate-200/60">
                     <p class="text-[10px] text-gray-400 font-mono tracking-[0.2em] uppercase flex justify-center items-center gap-1">
-                        &copy; 2025 <a href="https://github.com/ieax/renewhelper" target="_blank" class="font-bold text-slate-600 hover:text-blue-600 transition-colors border-b border-dashed border-slate-300 hover:border-blue-600 pb-0.5 mx-1 decoration-0">RenewHelper</a>
+                        &copy; 2025-2026 <a href="https://github.com/ieax/renewhelper" target="_blank" class="font-bold text-slate-600 hover:text-blue-600 transition-colors border-b border-dashed border-slate-300 hover:border-blue-600 pb-0.5 mx-1 decoration-0">RenewHelper</a>
                         <span class="text-blue-500 font-bold">${APP_VERSION}</span><span class="mx-2 opacity-30">|</span>DESIGNED BY <span class="font-bold text-slate-600">LOSTFREE</span>
                     </p>
                 </div>                  
@@ -2821,15 +2918,15 @@ const HTML = `<!DOCTYPE html>
             lblNotifyTime: '提醒时间', btnResetToken: '重置令牌',
             lblHeaders: '请求头 (JSON)', lblBody: '消息体 (JSON)',
             tag:{alert:'触发提醒',renew:'自动续期',disable:'自动禁用',normal:'检查正常'},tagLatest:'最新',tagAuto:'自动',tagManual:'手动',msg:{confirmRenew: '确认将 [%s] 的更新日期设置为今天吗？',renewSuccess: '续期成功！日期已更新: %s -> %t',tokenReset: '令牌已重置，请更新订阅地址', copyOk: '链接已复制', exportSuccess: '备份已下载',importSuccess: '数据恢复成功，即将刷新',importFail: '导入失败，请检查文件格式',passReq:'请输入密码',saved:'保存成功',saveFail:'保存失败',cleared:'已清空',clearFail:'清空失败',loginFail:'验证失败',loadLogFail:'日志加载失败',confirmDel:'确认删除此项目?',dateError:'上次更新日期不能早于创建日期',nameReq:'服务名称不能为空',nameExist:'服务名称已存在',futureError:'上次续期不能是未来时间',serviceDisabled:'服务已停用',serviceEnabled:'服务已启用',execFinish: '执行完毕!'},tags:'标签',tagPlaceholder:'输入标签回车创建',searchPlaceholder:'搜索标题或备注...',tagsCol:'标签',tagAll:'全部',useLunar:'农历周期',lunarTip:'按农历日期计算周期',yes:'是',no:'否',timezone:'偏好时区',disabledFilter:'已停用',policyConfig:'自动化策略',policyNotify:'提醒提前期',policyAuto:'自动续期',policyRenewDay:'过期续期天数',useGlobal:'全局默认',autoRenewOnDesc:'过期自动续期',autoRenewOffDesc:'过期自动禁用',previewCalc:'根据上次续期日期和周期计算',nextDue:'下次到期',
-            fixedPrice:'账单额',currency:'币种',defaultCurrency:'默认币种',history:'历史记录',historyTitle:'续费历史',totalCost:'总花费',totalCount:'续费次数',renewDate:'操作日期',billPeriod:'账单周期',startDate:'开始日期',endDate:'结束日期',actualPrice:'实付金额',notePlaceholder:'可选备注...',btnAddHist:'补录历史',modify:'修改',confirmDelHist:'删除此记录?',opDate:'操作日',amount:'金额',period:'周期',spendingDashboard:'花销看板',monthlyBreakdown:'月度明细',total:'总计',growth:'环比',currMonth:'本月'},
-            en: { filter:{expired:'Overdue/Today', w7:'Within 7 Days', w30:'Within 30 Days', future:'Future(>30d)', new:'New (<30d)', stable:'Stable (1m-1y)', long:'Long Term (>1y)', m1:'Last Month', m6:'Last 6 Months', year:'This Year', earlier:'Earlier'}, secPref: 'PREFERENCES',manualRenew: 'Quick Renew',tipToggle: 'Toggle Status',tipRenew: 'Quick Renew',tipEdit: 'Edit Service',tipDelete: 'Delete Service',secNotify: 'NOTIFICATIONS',secData: 'DATA MANAGEMENT',lblIcsTitle: 'CALENDAR SUBSCRIPTION',lblIcsUrl: 'ICS URL (iOS/Google Calendar)',btnCopy: 'COPY',btnResetToken: 'RESET TOKEN',loginTitle:'SYSTEM ACCESS',passwordPlaceholder:'Authorization Key',unlockBtn:'UNLOCK TERMINAL',check:'CHECK',add:'ADD NEW',settings:'CONFIG',logs:'LOGS',logout:'LOGOUT',totalServices:'TOTAL SERVICES',expiringSoon:'EXPIRING SOON',expiredAlert:'EXPIRED / ALERT',serviceName:'SERVICE NAME',type:'TYPE',nextDue:'NEXT DUE',uptime:'UPTIME',lastRenew:'LAST RENEW',cyclePeriod:'CYCLE',actions:'ACTIONS',cycle:'CYCLE',reset:'RESET',disabled:'DISABLED',days:'DAYS',daysUnit:'DAYS',typeReset:'RESET',typeCycle:'CYCLE',lunarCal:'Lunar',lbOffline:'OFFLINE',unit:{day:'DAY',month:'MTH',year:'YR'},editService:'EDIT SERVICE',newService:'NEW SERVICE',formName:'NAME',namePlaceholder:'e.g. Netflix',formType:'MODE',createDate:'CREATE DATE',interval:'INTERVAL',note:'NOTE',status:'STATUS',active:'ACTIVE',disabledText:'DISABLED',cancel:'CANCEL',save:'SAVE DATA',saveSettings:'SAVE CONFIG',settingsTitle:'SYSTEM CONFIG',setNotify:'NOTIFICATION',pushSwitch:'MASTER PUSH',pushUrl:'WEBHOOK URL',notifyThreshold:'ALERT THRESHOLD',setAuto:'AUTOMATION',autoRenewSwitch:'AUTO RENEW',autoRenewThreshold:'RENEW AFTER',autoDisableThreshold:'DISABLE AFTER',daysOverdue:'DAYS OVERDUE',sysLogs:'SYSTEM LOGS',execLogs:'EXECUTION LOGS',clearHistory:'CLEAR HISTORY',noLogs:'NO DATA',liveLog:'LIVE TERMINAL',btnExport: 'Export Data',btnImport: 'Import Data',btnTest: 'Send Test',btnRefresh:'REFRESH',
+            fixedPrice:'账单额',currency:'币种',defaultCurrency:'默认币种',history:'历史记录',historyTitle:'续费历史',totalCost:'总花费',totalCount:'续费次数',renewDate:'操作日期',billPeriod:'账单周期',startDate:'开始日期',endDate:'结束日期',actualPrice:'实付金额',notePlaceholder:'可选备注...',btnAddHist:'补录历史',modify:'修改',confirmDelHist:'删除此记录?',opDate:'操作日',amount:'金额',period:'周期',spendingDashboard:'花销看板',monthlyBreakdown:'月度明细',total:'总计',count:'笔',growth:'环比',currMonth:'本月',avgMonthlyLabel:'月均支出',itemDetails:'项目明细',noData:'暂无数据',predictedTag:'预测',last12M:'最近12个月'},
+            en: { viewSwitch:'VIEW SWITCH',viewProjects:'PROJECTS',viewSpending:'DASHBOARD',annualSummary:'Annual Summary',monthlyTrend:'Monthly Trend',noSpendingData:'No Spending Data',billAmount:'BILL AMOUNT',opSpending:'ACTUAL COST', avgMonthly:'AVG', avgMonthlyLabel:'AVG MONTHLY', filter:{expired:'Overdue/Today', w7:'Within 7 Days', w30:'Within 30 Days', future:'Future(>30d)', new:'New (<30d)', stable:'Stable (1m-1y)', long:'Long Term (>1y)', m1:'Last Month', m6:'Last 6 Months', year:'This Year', earlier:'Earlier'}, secPref: 'PREFERENCES',manualRenew: 'Quick Renew',tipToggle: 'Toggle Status',tipRenew: 'Quick Renew',tipEdit: 'Edit Service',tipDelete: 'Delete Service',secNotify: 'NOTIFICATIONS',secData: 'DATA MANAGEMENT',lblIcsTitle: 'CALENDAR SUBSCRIPTION',lblIcsUrl: 'ICS URL (iOS/Google Calendar)',btnCopy: 'COPY',btnResetToken: 'RESET TOKEN',loginTitle:'SYSTEM ACCESS',passwordPlaceholder:'Authorization Key',unlockBtn:'UNLOCK TERMINAL',check:'CHECK',add:'ADD NEW',settings:'CONFIG',logs:'LOGS',logout:'LOGOUT',totalServices:'TOTAL SERVICES',expiringSoon:'EXPIRING SOON',expiredAlert:'EXPIRED / ALERT',serviceName:'SERVICE NAME',type:'TYPE',nextDue:'NEXT DUE',uptime:'UPTIME',lastRenew:'LAST RENEW',cyclePeriod:'CYCLE',actions:'ACTIONS',cycle:'CYCLE',reset:'RESET',disabled:'DISABLED',days:'DAYS',daysUnit:'DAYS',typeReset:'RESET',typeCycle:'CYCLE',lunarCal:'Lunar',lbOffline:'OFFLINE',unit:{day:'DAY',month:'MTH',year:'YR'},editService:'EDIT SERVICE',newService:'NEW SERVICE',formName:'NAME',namePlaceholder:'e.g. Netflix',formType:'MODE',createDate:'CREATE DATE',interval:'INTERVAL',note:'NOTE',status:'STATUS',active:'ACTIVE',disabledText:'DISABLED',cancel:'CANCEL',save:'SAVE DATA',saveSettings:'SAVE CONFIG',settingsTitle:'SYSTEM CONFIG',setNotify:'NOTIFICATION',pushSwitch:'MASTER PUSH',pushUrl:'WEBHOOK URL',notifyThreshold:'ALERT THRESHOLD',setAuto:'AUTOMATION',autoRenewSwitch:'AUTO RENEW',autoRenewThreshold:'RENEW AFTER',autoDisableThreshold:'DISABLE AFTER',daysOverdue:'DAYS OVERDUE',sysLogs:'SYSTEM LOGS',execLogs:'EXECUTION LOGS',clearHistory:'CLEAR HISTORY',noLogs:'NO DATA',liveLog:'LIVE TERMINAL',btnExport: 'Export Data',btnImport: 'Import Data',btnTest: 'Send Test',btnRefresh:'REFRESH',last12M:'LAST 12M',
             lblEnable: 'Enable', lblToken: 'Token', lblApiKey: 'API Key', lblChatId: 'Chat ID', 
             lblServer: 'Server URL', lblDevKey: 'Device Key', lblFrom: 'From Email', lblTo: 'To Email',
             lblTopic: 'Topic',readOnly: 'Read-only',
             lblNotifyTime: 'Alarm Time', btnResetToken: 'RESET TOKEN',
             lblHeaders: 'Headers (JSON)', lblBody: 'Body (JSON)',
             tag:{alert:'ALERT',renew:'RENEWED',disable:'DISABLED',normal:'NORMAL'},tagLatest:'LATEST',tagAuto:'AUTO',tagManual:'MANUAL',msg:{confirmRenew: 'Renew [%s] to today based on your timezone?',renewSuccess: 'Renewed! Date updated: %s -> %t',tokenReset: 'Token Reset. Update your calendar apps.', copyOk: 'Link Copied', exportSuccess: 'Backup Downloaded',importSuccess: 'Restore Success, Refreshing...',importFail: 'Import Failed, Check File Format',passReq:'Password Required',saved:'Data Saved',saveFail:'Save Failed',cleared:'Cleared',clearFail:'Clear Failed',loginFail:'Access Denied',loadLogFail:'Load Failed',confirmDel:'Confirm Delete?',dateError:'Last renew date cannot be earlier than create date',nameReq:'Name Required',nameExist:'Name already exists',futureError:'Renew date cannot be in the future',serviceDisabled:'Service Disabled',serviceEnabled:'Service Enabled',execFinish: 'EXECUTION FINISHED!'},tags:'TAGS',tagPlaceholder:'Press Enter to create tag',searchPlaceholder:'Search...',tagsCol:'TAGS',tagAll:'ALL',useLunar:'Lunar Cycle',lunarTip:'Calculate based on Lunar calendar',yes:'Yes',no:'No',timezone:'Timezone',disabledFilter:'DISABLED',policyConfig:'Policy Config',policyNotify:'Notify Days',policyAuto:'Auto Renew',policyRenewDay:'Renew Days',useGlobal:'Global Default',autoRenewOnDesc:'Auto Renew when overdue',autoRenewOffDesc:'Auto Disable when overdue',previewCalc:'Based on Last Renew Date & Interval',nextDue:'NEXT DUE',
-            fixedPrice:'PRICE',currency:'Currency',defaultCurrency:'Default Currency',history:'History',historyTitle:'Renewal History',totalCost:'Total Cost',totalCount:'Total Count',renewDate:'Op Date',billPeriod:'Bill Period',startDate:'Start Date',endDate:'End Date',actualPrice:'Actual Price',notePlaceholder:'Optional note...',btnAddHist:'Add Record',modify:'Edit',confirmDelHist:'Delete record?',opDate:'Op Date',amount:'Amount',period:'Period',spendingDashboard:'SPENDING DASHBOARD',monthlyBreakdown:'MONTHLY BREAKDOWN',total:'TOTAL',growth:'GROWTH',currMonth:'CURRENT'}
+            fixedPrice:'PRICE',currency:'Currency',defaultCurrency:'Default Currency',history:'History',historyTitle:'Renewal History',totalCost:'Total Cost',totalCount:'Total Count',renewDate:'Op Date',billPeriod:'Bill Period',startDate:'Start Date',endDate:'End Date',actualPrice:'Actual Price',notePlaceholder:'Optional note...',btnAddHist:'Add Record',modify:'Edit',confirmDelHist:'Delete record?',opDate:'Op Date',amount:'Amount',period:'Period',spendingDashboard:'SPENDING DASHBOARD',monthlyBreakdown:'MONTHLY BREAKDOWN',total:'TOTAL',count:'COUNT',growth:'GROWTH',currMonth:'CURRENT',itemDetails:'ITEMS',noData:'NO DATA',predictedTag:'PREDICTED'}
         };
         const LUNAR={info:[0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,0x06566,0x0d4a0,0x0ea50,0x06e95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,0x06ca0,0x0b550,0x15355,0x04da0,0x0a5b0,0x14573,0x052b0,0x0a9a8,0x0e950,0x06aa0,0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x055c0,0x0ab60,0x096d5,0x092e0,0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,0x05aa0,0x076a3,0x096d0,0x04bd7,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,0x0a2e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,0x04ae0,0x0a9d4,0x0a2d0,0x0d150,0x0f252,0x0d520],gan:'甲乙丙丁戊己庚辛壬癸'.split(''),zhi:'子丑寅卯辰巳午未申酉戌亥'.split(''),months:'正二三四五六七八九十冬腊'.split(''),days:'初一,初二,初三,初四,初五,初六,初七,初八,初九,初十,十一,十二,十三,十四,十五,十六,十七,十八,十九,二十,廿一,廿二,廿三,廿四,廿五,廿六,廿七,廿八,廿九,三十'.split(','),lYearDays(y){let s=348;for(let i=0x8000;i>0x8;i>>=1)s+=(this.info[y-1900]&i)?1:0;return s+this.leapDays(y)},leapDays(y){if(this.leapMonth(y))return(this.info[y-1900]&0x10000)?30:29;return 0},leapMonth(y){return this.info[y-1900]&0xf},monthDays(y,m){return(this.info[y-1900]&(0x10000>>m))?30:29},solar2lunar(y,m,d){if(y<1900||y>2100)return null;const base=new Date(1900,0,31),obj=new Date(y,m-1,d);let offset=Math.round((obj-base)/86400000);let ly=1900,temp=0;for(;ly<2101&&offset>0;ly++){temp=this.lYearDays(ly);offset-=temp}if(offset<0){offset+=temp;ly--}let lm=1,leap=this.leapMonth(ly),isLeap=false;for(;lm<13&&offset>0;lm++){if(leap>0&&lm===(leap+1)&&!isLeap){--lm;isLeap=true;temp=this.leapDays(ly)}else{temp=this.monthDays(ly,lm)}if(isLeap&&lm===(leap+1))isLeap=false;offset-=temp}if(offset===0&&leap>0&&lm===leap+1){if(isLeap)isLeap=false;else{isLeap=true;--lm}}if(offset<0){offset+=temp;--lm}const ld=offset+1,gIdx=(ly-4)%10,zIdx=(ly-4)%12;const yStr=this.gan[gIdx<0?gIdx+10:gIdx]+this.zhi[zIdx<0?zIdx+12:zIdx];const mStr=(isLeap?'闰':'')+this.months[lm-1]+'月';return{year:ly,month:lm,day:ld,isLeap,yearStr:yStr,monthStr:mStr,dayStr:this.days[ld-1],fullStr:yStr+'年'+mStr+this.days[ld-1]}}};
         
@@ -2883,6 +2980,8 @@ const HTML = `<!DOCTYPE html>
                 const currentView = ref('project');
                 const hoverIndex = ref(-1);
                 const spendingMode = ref('op');
+                const selectedYear = ref('recent'); // 'recent' = last 12 months, or year number like 2024
+                const selectedMonth = ref(null); // selected month key like '2026-01' for detail view
                 const locale = ref(ZhCn), tableKey = ref(0), termRef = ref(null), submitting = ref(false);
                 const form = ref({ id:'', name:'', createDate:'', lastRenewDate:'', intervalDays:30, cycleUnit:'day', type:'cycle', message:'', enabled:true, tags:[], useLunar:false, notifyDays:3, notifyTime: '08:00', autoRenew:true, autoRenewDays:3, fixedPrice:0, currency:'CNY', renewHistory:[] });
                 const settingsForm = ref({ 
@@ -2979,104 +3078,222 @@ const HTML = `<!DOCTYPE html>
                 const expiredTotal = computed(() => calculateTotal(expiredItems.value));
                 const totalAmount = computed(() => calculateTotal(list.value));
                 
-                // Spending Stats (Refactored)
+// Spending Stats (Refactored: Fix Year Range & Project Details)
                 const spendingStats = computed(() => {
                     const defaultCur = settings.value.defaultCurrency || 'CNY';
+                    const now = new Date();
+                    const currentMonthKey = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
                     const rates = exchangeRates.value || {};
                     const convert = (p, c) => (c !== defaultCur && rates[c]) ? p / rates[c] : p;
-                    const now = new Date();
                     
-                    // Define Ranges
-                    // Monthly: Current-11 to Current (12 months)
+                    // Define Ranges based on selectedYear
                     const monthKeys = [];
-                    for(let i=11; i>=0; i--) {
-                        const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
-                        monthKeys.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+                    const sel = selectedYear.value;
+                    if (sel === 'recent') {
+                        for(let i=11; i>=0; i--) {
+                            const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+                            monthKeys.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+                        }
+                    } else {
+                        const y = parseInt(sel);
+                        for(let m=1; m<=12; m++) {
+                            monthKeys.push(y + '-' + String(m).padStart(2, '0'));
+                        }
                     }
-                    // Annual: Current-2 to Current (3 years)
+                    
+                    // 【修改 1】年度范围：仅保留今年、去年、前年 (去除明年)
                     const yearKeys = [now.getFullYear()-2, now.getFullYear()-1, now.getFullYear()];
 
+                    // 【修改 2】增加 details 字段用于存储明细
                     const data = {
-                        bill: { months: {}, years: {} },
-                        op:   { months: {}, years: {} }
+                        bill: { months: {}, years: {}, monthCounts: {}, details: {} },
+                        op:   { months: {}, years: {}, monthCounts: {}, details: {} }
                     };
                     
+                    // 辅助函数：添加明细
+                    const addDetail = (mode, monthKey, item, price, dateStr, periodStr, isProjected = false) => {
+                        if (!data[mode].details[monthKey]) data[mode].details[monthKey] = [];
+                        data[mode].details[monthKey].push({
+                            name: item.name,
+                            amount: price.toFixed(2),
+                            currency: defaultCur, // 已转换为默认币种
+                            date: dateStr,
+                            period: periodStr,
+                            isProjected: isProjected,
+                            tags: item.tags || []
+                        });
+                    };
+
                     list.value.forEach(item => {
                          const history = item.renewHistory || [];
                          const cur = item.currency || defaultCur;
+                         const processedBillDates = new Set();
+                         
+                         // 1. History Records (Past Data)
                          history.forEach(r => {
-                             let price = parseFloat(r.actualPrice) || parseFloat(item.fixedPrice) || 0;
-                             price = convert(price, cur);
+                             let price = parseFloat(r.price || r.actualPrice || item.fixedPrice) || 0;
+                             price = convert(price, r.currency || cur);
                              
-                             // Bill Amount (startDate)
+                             // Bill Amount (Start Date based)
                              if(r.startDate) {
+                                 processedBillDates.add(r.startDate);
                                  const p = r.startDate.split('-');
                                  const y = parseInt(p[0]), m = parseInt(p[1]);
                                  if(y && m) {
                                      const mk = y + '-' + String(m).padStart(2,'0');
                                      data.bill.months[mk] = (data.bill.months[mk]||0) + price;
+                                     data.bill.monthCounts[mk] = (data.bill.monthCounts[mk]||0) + 1;
                                      data.bill.years[y] = (data.bill.years[y]||0) + price;
+                                     // 记录明细
+                                     addDetail('bill', mk, item, price, r.startDate, \`\${ r.startDate } -> \${ r.endDate || '?' } \`);
                                  }
                              }
-                             // Operation Spending (renewDate)
+                             // Operation Spending (Op Date based)
                              if(r.renewDate) {
-                                 const p = r.renewDate.split('-');
+                                 const p = r.renewDate.split('-'); 
                                  const y = parseInt(p[0]), m = parseInt(p[1]);
                                  if(y && m) {
                                      const mk = y + '-' + String(m).padStart(2,'0');
                                      data.op.months[mk] = (data.op.months[mk]||0) + price;
+                                     data.op.monthCounts[mk] = (data.op.monthCounts[mk]||0) + 1;
                                      data.op.years[y] = (data.op.years[y]||0) + price;
+                                     // 记录明细
+                                     addDetail('op', mk, item, price, r.renewDate.split(' ')[0], \`\${ r.startDate || '?' } -> \${ r.endDate || '?' } \`);
                                  }
                              }
                          });
+
+                         // 2. Legacy/Current Data (No history yet)
+                         if(item.startDate || item.lastRenewDate) {
+                             const dateStr = (item.startDate || item.lastRenewDate).substring(0, 10);
+                             if (!processedBillDates.has(dateStr)) {
+                                 processedBillDates.add(dateStr);
+                                 let price = parseFloat(item.fixedPrice) || 0;
+                                 price = convert(price, cur);
+                                 const p = dateStr.split('-');
+                                 const y = parseInt(p[0]), m = parseInt(p[1]);
+                                 if(y && m) {
+                                     const mk = y + '-' + String(m).padStart(2,'0');
+                                     data.bill.months[mk] = (data.bill.months[mk]||0) + price;
+                                     data.bill.monthCounts[mk] = (data.bill.monthCounts[mk]||0) + 1;
+                                     data.bill.years[y] = (data.bill.years[y]||0) + price;
+                                     // 估算结束日期用于显示
+                                     let legacyEnd = '?'; 
+                                     // 这里简单处理，因为没有 rigorous calculation context
+                                     addDetail('bill', mk, item, price, dateStr, \`\${ dateStr } -> \${ legacyEnd } \`);
+                                 }
+                             }
+                         }
+
+                         // 3. Future Projection (Auto-Renew)
+                         if(item.autoRenew && item.nextDueDate && item.enabled !== false) {
+                             let price = parseFloat(item.fixedPrice) || 0;
+                             price = convert(price, cur);
+                             
+                             let nextStart = parseYMD(item.nextDueDate);
+                             const maxYear = Math.max(...yearKeys); // 只预测到统计图显示的年份
+                             const unit = item.cycleUnit || 'day';
+                             const val = parseInt(item.intervalDays) || 1;
+                             
+                             for(let i=0; i<12; i++) { 
+                                 const y = nextStart.getFullYear();
+                                 if(y > maxYear) break;
+
+                                 const mm = nextStart.getMonth() + 1;
+                                 const dd = nextStart.getDate();
+                                 const dateStr = y + '-' + String(mm).padStart(2,'0') + '-' + String(dd).padStart(2,'0');
+
+                                 // 计算该周期的结束日 (用于 UI 显示)
+                                 const currentStartObj = new Date(nextStart);
+                                 let currentEndObj = new Date(nextStart);
+                                 if(unit === 'year') currentEndObj.setFullYear(currentEndObj.getFullYear() + val);
+                                 else if(unit === 'month') currentEndObj.setMonth(currentEndObj.getMonth() + val);
+                                 else currentEndObj.setDate(currentEndObj.getDate() + val);
+                                 const endY = currentEndObj.getFullYear();
+                                 const endM = currentEndObj.getMonth() + 1;
+                                 const endD = currentEndObj.getDate();
+                                 const endDateStr = endY + '-' + String(endM).padStart(2,'0') + '-' + String(endD).padStart(2,'0');
+
+                                 if(!processedBillDates.has(dateStr)) {
+                                     const mk = y + '-' + String(mm).padStart(2,'0');
+                                     data.bill.months[mk] = (data.bill.months[mk]||0) + price;
+                                     data.bill.monthCounts[mk] = (data.bill.monthCounts[mk]||0) + 1;
+                                     data.bill.years[y] = (data.bill.years[y]||0) + price;
+                                     processedBillDates.add(dateStr);
+                                     
+                                     // 【修改 3】将预测数据加入明细
+                                     // 注意：预测只有在“账单金额”模式下才有效，操作支出模式下无法预测未来的操作时间
+                                     addDetail('bill', mk, item, price, dateStr, \`\${ dateStr } -> \${ endDateStr } \`, true);
+                                 }
+
+                                 // 推进到下个周期
+                                 nextStart = currentEndObj;
+                             }
+                         }
                     });
 
                     const processStats = (source) => {
-                         // Trends (12 Months)
                          const trends = monthKeys.map((key, idx) => {
                              const val = source.months[key] || 0;
-                             // Growth vs Prev Month
                              const [y, m] = key.split('-').map(Number);
                              const prevD = new Date(y, m-2, 1);
                              const prevKey = prevD.getFullYear() + '-' + String(prevD.getMonth()+1).padStart(2,'0');
                              const prevVal = source.months[prevKey] || 0;
-                             
                              let growth = 0;
                              if(prevVal > 0) growth = ((val - prevVal)/prevVal)*100;
                              else if(val > 0) growth = 100;
-
-                             return {
-                                 month: key,
-                                 total: val.toFixed(2),
-                                 val: val,
-                                 growth: growth.toFixed(1),
-                                 isCurrent: idx === 11,
-                                 prevVal: prevVal
-                             };
+                             return { month: key, total: val.toFixed(2), val: val, count: source.monthCounts[key] || 0, growth: growth.toFixed(1), isCurrent: key === currentMonthKey, prevVal: prevVal };
                          });
                          const maxM = Math.max(...trends.map(t=>t.val), 1);
                          trends.forEach(t => t.pct = Math.round((t.val/maxM)*100));
-
-                         // Annual (3 Years)
-                         const annual = yearKeys.map(y => ({
-                             year: y,
-                             total: (source.years[y]||0).toFixed(0),
-                             val: source.years[y]||0
-                         }));
-                         const maxY = Math.max(...annual.map(a=>a.val), 1);
-                         annual.forEach(a => a.pct = Math.round((a.val/maxY)*100));
-
-                         return { trends, annual };
+                         const sumVal = trends.reduce((acc, t) => acc + t.val, 0);
+                         const avgVal = sumVal / trends.length;
+                         const avgPct = Math.round((avgVal / maxM) * 100);
+                         
+                         // Annual Data
+                         const annual = yearKeys.map(y => ({ year: y, total: (source.years[y]||0).toFixed(2), val: source.years[y]||0 }));
+                         return { trends, annual, avgVal, avgPct, recentTotal: sumVal, details: source.details };
                     };
+
+                    const recentMonthKeys = [];
+                    for(let i=11; i>=0; i--) {
+                        const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+                        recentMonthKeys.push(d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'));
+                    }
+                    const calcRecentTotal = (source) => recentMonthKeys.reduce((sum, mk) => sum + (source.months[mk] || 0), 0);
 
                     const billStats = processStats(data.bill);
                     const opStats = processStats(data.op);
+                    
+                    billStats.recentTotal = calcRecentTotal(data.bill);
+                    opStats.recentTotal = calcRecentTotal(data.op);
+                    
+                    const billMaxWithRecent = Math.max(...billStats.annual.map(a => a.val), billStats.recentTotal, 1);
+                    const opMaxWithRecent = Math.max(...opStats.annual.map(a => a.val), opStats.recentTotal, 1);
+                    billStats.annual.forEach(a => a.pct = Math.round((a.val / billMaxWithRecent) * 100));
+                    opStats.annual.forEach(a => a.pct = Math.round((a.val / opMaxWithRecent) * 100));
+                    billStats.recentPct = Math.round((billStats.recentTotal / billMaxWithRecent) * 100);
+                    opStats.recentPct = Math.round((opStats.recentTotal / opMaxWithRecent) * 100);
 
-                    return {
-                        bill: billStats,
-                        op:   opStats,
-                        hasData: Math.max(...billStats.trends.map(t=>t.val)) > 0 || Math.max(...opStats.trends.map(t=>t.val)) > 0
+                    const getSelectedInfo = (stats) => {
+                        if (sel === 'recent') return { label: '12M', total: stats.recentTotal.toFixed(2) };
+                        const y = parseInt(sel);
+                        const found = stats.annual.find(a => a.year === y);
+                        return { label: String(y), total: found ? found.total : '0' };
                     };
+                    billStats.selectedInfo = getSelectedInfo(billStats);
+                    opStats.selectedInfo = getSelectedInfo(opStats);
+
+                    return { bill: billStats, op: opStats, hasData: billStats.recentTotal > 0 || opStats.recentTotal > 0 || billStats.annual.some(a => a.val > 0) || opStats.annual.some(a => a.val > 0) };
+                });
+
+                // Month Details: 直接从 spendingStats 中获取预处理好的明细
+                const monthDetails = computed(() => {
+                    if (!selectedMonth.value || !spendingStats.value.hasData) return [];
+                    const mode = spendingMode.value;
+                    const details = spendingStats.value[mode].details[selectedMonth.value] || [];
+                    // 按日期倒序排列
+                    return details.sort((a, b) => b.date.localeCompare(a.date));
                 });
 
                 const disabledCount = computed(() => list.value.filter(i => !i.enabled).length);
@@ -4191,6 +4408,27 @@ const HTML = `<!DOCTYPE html>
                 watch([currentTag, searchKeyword], () => {
                     currentPage.value = 1;
                 });
+                
+                // Initialize selectedMonth to the latest month when data is available
+                watch(() => spendingStats.value, (stats) => {
+                    if (stats.hasData && !selectedMonth.value) {
+                        const trends = stats[spendingMode.value]?.trends;
+                        if (trends && trends.length > 0) {
+                            selectedMonth.value = trends[trends.length - 1].month;
+                        }
+                    }
+                }, { immediate: true });
+                
+                // Reset selectedMonth when spendingMode or selectedYear changes
+                watch([spendingMode, selectedYear], () => {
+                    const stats = spendingStats.value;
+                    if (stats.hasData) {
+                        const trends = stats[spendingMode.value]?.trends;
+                        if (trends && trends.length > 0) {
+                            selectedMonth.value = trends[trends.length - 1].month;
+                        }
+                    }
+                });
                 const importRef = ref(null);
                 const exportData = async () => {
                     try {
@@ -4221,7 +4459,7 @@ const HTML = `<!DOCTYPE html>
                     reader.readAsText(file);
                 };
                 return {
-                    tableKey, termRef, isLoggedIn, password, login, logout, loading, list, settings, lang, toggleLang, setLang, t, locale, disabledCount, currentView, hoverIndex, spendingStats, spendingMode,
+                    tableKey, termRef, isLoggedIn, password, login, logout, loading, list, settings, lang, toggleLang, setLang, t, locale, disabledCount, currentView, hoverIndex, spendingStats, spendingMode, selectedYear, selectedMonth, monthDetails, Close: ElementPlusIconsVue.Close,
                     dialogVisible, settingsVisible, historyVisible, historyLoading, historyLogs, checking, logs, displayLogs, form, settingsForm, isEdit,
                     expiringCount, expiredCount, currentTag, allTags, filteredList, searchKeyword, logVisible,formatLogTime,Upload, Download,
                     openAdd, editItem, deleteItem, saveItem, openSettings, saveSettings, runCheck, openHistoryLogs, clearLogs, toggleEnable,importRef, exportData, triggerImport, handleImportFile,
