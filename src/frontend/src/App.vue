@@ -137,6 +137,8 @@ const calculateCycleEndDate = (startDateStr, item) => {
 
     const isLoggedIn = ref(!!localStorage.getItem('jwt_token')), password = ref(''), loading = ref(false), list = ref([]), settings = ref({ upcomingBillsDays: 7 });
     const dataVersion = ref(0); // 新增版本号状态
+    const hasNewVersion = ref(false); // 版本更新提示
+    const newVersionCode = ref('');
     const dialogVisible = ref(false), settingsVisible = ref(false), historyVisible = ref(false), historyLoading = ref(false), historyLogs = ref([]);
     const checking = ref(false), logs = ref([]), displayLogs = ref([]), isEdit = ref(false), lang = ref('zh'), currentTag = ref(''), searchKeyword = ref('');
     const currentView = ref('project');
@@ -757,6 +759,40 @@ const calculateCycleEndDate = (startDateStr, item) => {
         return r;
     });
 
+    
+    const checkAppVersion = async () => {
+        try {
+            const res = await fetch('https://versync.pages.dev/renewhelper.json');
+            if(res.ok) {
+                const data = await res.json();
+                if(data.version) {
+                     // Title format: "RenewHelper v2.2.7"
+                     const title = document.title;
+                     const match = title.match(/v(\d+\.\d+\.\d+)/);
+                     if(match) {
+                         const currentVer = match[1];
+                         console.log('Version Check:', currentVer, 'vs', data.version);
+                         
+                         const v1 = data.version.split('.').map(Number);
+                         const v2 = currentVer.split('.').map(Number);
+                         let isNew = false;
+                         for(let i=0; i<Math.max(v1.length, v2.length); i++) {
+                             const n1 = v1[i] || 0;
+                             const n2 = v2[i] || 0;
+                             if(n1 > n2) { isNew = true; break; }
+                             if(n1 < n2) break;
+                         }
+
+                         if(isNew) {
+                             hasNewVersion.value = true;
+                             newVersionCode.value = data.version;
+                         }
+                     }
+                }
+            }
+        } catch(e) { console.error('Version check failed', e); }
+    };
+
     onMounted(() => {
         // Check if migration is needed (Once per day)
         const checkMigrationNeeded = async () => {
@@ -788,69 +824,74 @@ const calculateCycleEndDate = (startDateStr, item) => {
 
         const l = localStorage.getItem('lang'); if(l) setLang(l);
         const tk = localStorage.getItem('jwt_token'); if(tk) fetchList(tk);
-        
-        // After initial fetchList (if token exists), check for migration (Bills & Channels)
+        // 1. Version Check (Async, non-blocking)
+        checkAppVersion();        
+        // After initial fetchList (if token exists), check for migration (Bills & Channels) AND Version Check
         const unwatchList = watch([list, settings], ([newList, newSettings]) => {
             if (newList && newList.length > 0) {
-                // 1. Check Bills
-                const billInfo = newList.filter(item => (!item.renewHistory || item.renewHistory.length === 0) && item.lastRenewDate && item.intervalDays);
+                const lastCheck = localStorage.getItem('lastMigrationCheck');
+                const today = new Date().toDateString();
                 
-                // 2. Check Channels
-                let channelCount = 0;
-                if (newSettings && newSettings.notifyConfig) {
-                    const oldConf = newSettings.notifyConfig;
-                    const existingChannels = newSettings.channels || [];
-                    const types = ['telegram', 'bark', 'pushplus', 'notifyx', 'resend', 'webhook', 'gotify', 'ntfy'];
-                    types.forEach(t => {
-                        const c = oldConf[t];
-                        // 逻辑同步：严格检查有效性
-                        if (c && Object.values(c).some(v => v && v.trim())) {
-                             if (t === 'bark' && (!c.key || !c.key.trim())) return;
-                             if (t === 'ntfy' && (!c.token || !c.token.trim())) return;
-                             
-                             if (!existingChannels.some(ex => ex.type === t && ex.name.endsWith('_Old'))) {
-                                 channelCount++;
-                             }
-                        }
-                    });
-                }
+                // Only check once a day (Shared Key for Migration & Version Check)
+                if (lastCheck !== today) {
+                    
 
-                if (billInfo.length > 0 || channelCount > 0) {
-                    const lastCheck = localStorage.getItem('lastMigrationCheck');
-                    const today = new Date().toDateString();
-                    if (lastCheck !== today) {
-                        localStorage.setItem('lastMigrationCheck', today);
-                        
-                        let msg = '';
-                        if (billInfo.length > 0 && channelCount > 0) {
-                            msg = lang.value === 'zh' ? `检测到 ${billInfo.length} 个项目缺少账单，${channelCount} 个通知渠道待迁移。` : `Found ${billInfo.length} items lacking bills and ${channelCount} legacy channels.`;
-                        } else if (billInfo.length > 0) {
-                            msg = lang.value === 'zh' ? `检测到 ${billInfo.length} 个项目缺少历史账单。` : `Found ${billInfo.length} items without history.`;
-                        } else {
-                            msg = lang.value === 'zh' ? `检测到 ${channelCount} 个旧版通知渠道待迁移。` : `Found ${channelCount} legacy channels to migrate.`;
-                        }
-                        
-                        ElMessageBox.confirm(
-                            msg + (lang.value === 'zh' ? ' 建议先备份数据再执行迁移，是否继续？(今日仅提示一次)' : ' Recommend backup first. Continue? (Ask once today)'),
-                            lang.value === 'zh' ? '数据优化建议' : 'Optimization Suggestion',
-                            { confirmButtonText: lang.value === 'zh' ? '备份并迁移' : 'Backup & Migrate', cancelButtonText: t('cancel'), type: 'info' }
-                        ).then(async () => {
-                            await exportData();
-                            setTimeout(() => {
-                                ElMessageBox.confirm(
-                                    lang.value === 'zh' ? '备份文件是否已保存？确认后将开始迁移。' : 'Is the backup saved? Migration will start upon confirmation.',
-                                    lang.value === 'zh' ? '最后确认' : 'Final Confirmation',
-                                    { confirmButtonText: lang.value === 'zh' ? '确认迁移' : 'Start Migration', cancelButtonText: t('cancel'), type: 'warning' }
-                                ).then(() => {
-                                    migrateOldData(true);
-                                }).catch(()=>{});
-                            }, 1000);
-                        }).catch(()=>{});
+
+                    // 2. Migration Check
+                    const billInfo = newList.filter(item => (!item.renewHistory || item.renewHistory.length === 0) && item.lastRenewDate && item.intervalDays);
+                    let channelCount = 0;
+                    if (newSettings && newSettings.notifyConfig) {
+                        const oldConf = newSettings.notifyConfig;
+                        const existingChannels = newSettings.channels || [];
+                        const types = ['telegram', 'bark', 'pushplus', 'notifyx', 'resend', 'webhook', 'gotify', 'ntfy'];
+                        types.forEach(t => {
+                            const c = oldConf[t];
+                            if (c && Object.values(c).some(v => v && v.trim())) {
+                                 if (t === 'bark' && (!c.key || !c.key.trim())) return;
+                             if (t === 'ntfy' && (!c.topic || !c.topic.trim())) return;  // topic 不能为空
+                             
+                                 if (!existingChannels.some(ex => ex.type === t && ex.name.endsWith('_Old'))) {
+                                     channelCount++;
+                                 }
+                            }
+                        });
+                    }
+
+                    if (billInfo.length > 0 || channelCount > 0) {
+                            let msg = '';
+                            if (billInfo.length > 0 && channelCount > 0) {
+                                msg = lang.value === 'zh' ? `检测到 ${billInfo.length} 个项目缺少账单，${channelCount} 个通知渠道待迁移。` : `Found ${billInfo.length} items lacking bills and ${channelCount} legacy channels.`;
+                            } else if (billInfo.length > 0) {
+                                msg = lang.value === 'zh' ? `检测到 ${billInfo.length} 个项目缺少历史账单。` : `Found ${billInfo.length} items without history.`;
+                            } else {
+                                msg = lang.value === 'zh' ? `检测到 ${channelCount} 个旧版通知渠道待迁移。` : `Found ${channelCount} legacy channels to migrate.`;
+                            }
+                            
+                            ElMessageBox.confirm(
+                                msg + (lang.value === 'zh' ? ' 建议先备份数据再执行迁移，是否继续？(今日仅提示一次)' : ' Recommend backup first. Continue? (Ask once today)'),
+                                lang.value === 'zh' ? '数据优化建议' : 'Optimization Suggestion',
+                                { confirmButtonText: lang.value === 'zh' ? '备份并迁移' : 'Backup & Migrate', cancelButtonText: t('cancel'), type: 'info' }
+                            ).then(async () => {
+                                await exportData();
+                                setTimeout(() => {
+                                    ElMessageBox.confirm(
+                                        lang.value === 'zh' ? '备份文件是否已保存？确认后将开始迁移。' : 'Is the backup saved? Migration will start upon confirmation.',
+                                        lang.value === 'zh' ? '最后确认' : 'Final Confirmation',
+                                        { confirmButtonText: lang.value === 'zh' ? '确认迁移' : 'Start Migration', cancelButtonText: t('cancel'), type: 'warning' }
+                                    ).then(() => {
+                                        migrateOldData(true);
+                                    }).catch(()=>{});
+                                }, 1000);
+                            }).catch(()=>{});
+                    }
+                    
+                    // Mark as checked for today
+                    localStorage.setItem('lastMigrationCheck', today);
                 }
             }
                 fetchExchangeRates(settings.value.defaultCurrency || 'CNY');
                 unwatchList();
-            }
+
         });
 
         window.addEventListener('resize', updateWidth);
@@ -1964,6 +2005,7 @@ const calculateCycleEndDate = (startDateStr, item) => {
         };
         return map[type] || 'text-slate-500 border-slate-500';
     };
+    const openLink = (url) => { if(url) window.open(url, '_blank'); };
 </script>
 <template>
     <div id="app" v-cloak class="min-h-screen p-4 sm:p-8 flex flex-col transition-colors duration-300">
@@ -2609,7 +2651,9 @@ const calculateCycleEndDate = (startDateStr, item) => {
                 <div class="mt-8 py-6 text-center border-t border-slate-200/60">
                     <p class="text-[10px] text-gray-400 font-mono tracking-[0.2em] uppercase flex justify-center items-center gap-1">
                         &copy; 2025-2026 <a href="https://github.com/ieax/renewhelper" target="_blank" class="font-bold text-slate-600 hover:text-blue-600 transition-colors border-b border-dashed border-slate-300 hover:border-blue-600 pb-0.5 mx-1 decoration-0">RenewHelper</a>
-                        <span class="text-blue-500 font-bold">${APP_VERSION}</span><span class="mx-2 opacity-30">|</span>DESIGNED BY <span class="font-bold text-slate-600">LOSTFREE</span>
+                        <span class="text-blue-500 font-bold">${APP_VERSION}</span>
+                        <el-tag v-if="hasNewVersion" type="success" size="small" effect="plain" class="ml-1 cursor-pointer !bg-transparent !px-1 !h-4 !text-[9px] !leading-none !tracking-normal !font-bold" @click="openLink('https://github.com/ieax/renewhelper/releases')">NEW v{{ newVersionCode }}</el-tag>
+                        <span class="mx-2 opacity-30">|</span>DESIGNED BY <span class="font-bold text-slate-600">LOSTFREE</span>
                     </p>
                 </div>                  
             </div>
